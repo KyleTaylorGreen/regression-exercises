@@ -28,7 +28,29 @@ def clean_zillow(df):
     #print(quants)
     df = prepare.remove_outliers(3.5, quants, df)
 
+    # see if sqr feet makes sense
+    df = clean_sqr_feet(df)
+
     return df
+
+def minimum_sqr_ft(df):
+    # min square footage for type of room
+    bathroom_min = 10
+    bedroom_min = 70
+    
+    # total MIN sqr feet
+    total = df.bathroomcnt * bathroom_min + df.bedroomcnt * bedroom_min
+
+    # return MIN sqr feet
+    return total
+
+def clean_sqr_feet(df):
+    # get MIN sqr ft
+    min_sqr_ft = minimum_sqr_ft(df)
+
+    # return df with sqr_ft >= min_sqr_ft
+    # change 'sqr_ft' to whichever name you have for sqr_ft in df
+    return df[df.sqr_ft >= min_sqr_ft]
 
 def wrangle_zillow():
     # aquire zillow data from mysql or csv

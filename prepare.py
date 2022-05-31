@@ -22,11 +22,11 @@ def fit_and_scale(scaler, train, validate, test):
     # fits scaler to training data only, then transforms 
     # train, validate & test
     scaler.fit(train[floats])
-    min_max_train = pd.DataFrame(data=scaler.transform(train[floats]), columns=floats)
-    min_max_validate = pd.DataFrame(data=scaler.transform(validate[floats]), columns=floats)
-    min_max_test = pd.DataFrame(data=scaler.transform(test[floats]), columns=floats)
+    scaled_train = pd.DataFrame(data=scaler.transform(train[floats]), columns=floats)
+    scaled_validate = pd.DataFrame(data=scaler.transform(validate[floats]), columns=floats)
+    scaled_test = pd.DataFrame(data=scaler.transform(test[floats]), columns=floats)
 
-    return min_max_train, min_max_validate, min_max_test
+    return scaled_train, scaled_validate, scaled_test
 
 def prep_iris(iris_df):
     iris_data = iris_df
