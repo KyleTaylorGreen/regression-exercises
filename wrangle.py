@@ -1,5 +1,6 @@
 import acquire
 import pandas as pd
+import prepare
 
 def clean_zillow(df):
     # drop nulls and extra column
@@ -20,6 +21,12 @@ def clean_zillow(df):
     # exclude houses with bthroom/bedroomcnts of 0
     df = df[df.bedroomcnt != 0]
     df = df[df.bathroomcnt != 0.0]
+
+    # remove all rows where any column has z score gtr than 3
+    non_quants = ['yearbuilt', 'fips', 'parcelid']
+    quants = df.drop(columns=non_quants).columns
+    #print(quants)
+    df = prepare.remove_outliers(3.5, quants, df)
 
     return df
 

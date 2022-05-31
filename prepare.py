@@ -3,6 +3,30 @@ import pandas as pd
 import acquire
 import numpy as np
 from scipy import stats
+import matplotlib.pyplot as plt
+
+def visualize_scaled_data(train, scaled_train):
+
+    plt.figure(figsize=(13, 6))
+    plt.subplot(121)
+    plt.hist(train, bins=25, ec='black')
+    plt.title('Original')
+    plt.subplot(122)
+    plt.hist(scaled_train, bins=25, ec='black')
+    plt.title('Scaled')
+
+def fit_and_scale(scaler, train, validate, test):
+    # only scales float columns
+    floats = train.select_dtypes(include='float64').columns
+
+    # fits scaler to training data only, then transforms 
+    # train, validate & test
+    scaler.fit(train[floats])
+    min_max_train = pd.DataFrame(data=scaler.transform(train[floats]), columns=floats)
+    min_max_validate = pd.DataFrame(data=scaler.transform(validate[floats]), columns=floats)
+    min_max_test = pd.DataFrame(data=scaler.transform(test[floats]), columns=floats)
+
+    return min_max_train, min_max_validate, min_max_test
 
 def prep_iris(iris_df):
     iris_data = iris_df
