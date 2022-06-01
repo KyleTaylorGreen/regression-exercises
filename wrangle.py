@@ -23,15 +23,23 @@ def clean_zillow(df):
     df = df[df.bathroomcnt != 0.0]
 
     # remove all rows where any column has z score gtr than 3
-    non_quants = ['yearbuilt', 'fips', 'parcelid']
+    non_quants = ['fips', 'parcelid']
     quants = df.drop(columns=non_quants).columns
-    #print(quants)
+    
+    # remove numeric values with > 3.5 std dev
     df = prepare.remove_outliers(3.5, quants, df)
 
     # see if sqr feet makes sense
     df = clean_sqr_feet(df)
 
-    return df
+    # fips to categorical data
+    df.fips = df.fips.astype('object')
+
+    categorical = ['fips']
+
+    df.yearbuilt = df.yearbuilt.astype('float64')
+    
+    return df, categorical, quants
 
 def minimum_sqr_ft(df):
     # min square footage for type of room
@@ -57,6 +65,6 @@ def wrangle_zillow():
     zillow = acquire.get_zillow_data()
 
     # clean zillow data
-    zillow = clean_zillow(zillow)
+    zillow, categorical, quant_cols = clean_zillow(zillow)
 
-    return zillow
+    return zillow, categorical, quant_cols
