@@ -8,6 +8,10 @@ import split
 import matplotlib.pyplot as plt
 import itertools
 import scipy.stats as stats
+import gmaps
+import env
+
+from IPython.display import display
 
 from sklearn.metrics import confusion_matrix
 from sklearn.metrics import accuracy_score
@@ -272,7 +276,39 @@ def overview(train_df, categories,
 
     return final_df
 
+def plot_variable_pairs(train, quants, sample=10_000):
+    
+    for pair in list(itertools.combinations(train[quants].columns, 2)):
+        sns.lmplot(x=pair[0], y=pair[1], data=train.sample(sample), hue='county')
 
+def zillow_univariate_hists(df):
+    cols_to_visualize = df.drop(columns='parcelid').columns
+    for col in cols_to_visualize:
+        target_freq_hist_count(df, col)
+        plt.xlabel(col)
+        plt.show()
+
+def plot_categorical_and_continuous_vars(df, continuous, cats):
+    combos = []
+    for cat in cats:
+        for cont in continuous:
+            combos.append([cont, cat])
+        
+    for combo in combos:
+        sns.violinplot(x=combo[0], y=combo[1], data=df.sample(1_000))
+        plt.show()
+
+def add_back_to_train(train, df, col_to_add, shared_id_column):
+    
+
+    col_values = []
+
+    for value in train[shared_id_column]:
+        col_values.append(df.query(f'{shared_id_column} == {value}')[f'{col_to_add}'].values[0])
+
+    train[f'{col_to_add}'] = col_values
+
+    return train
 
 def a_matrix():
     actual = [1,1,0,0, 1,0,0,0,0,0,0]
@@ -281,6 +317,176 @@ def a_matrix():
     results = confusion_matrix(actual, pred)
     print(results)
     print(classification_report(actual,pred))
+
+def county_borders(df, resolution):
+    zillow = df.copy()
+    border_dict = {}
+    grids = []
+    prices = []
+    
+    zillow.latitude = zillow.latitude / 1000000
+    zillow.longitude = zillow.longitude / 1000000
+    
+    for county in zillow.county.unique():
+        border_dict[f'{county}_lat_min'] = zillow[zillow.county == county].latitude.min()
+        border_dict[f'{county}_lat_max'] = zillow[zillow.county == county].latitude.max()
+        border_dict[f'{county}_lon_min'] = zillow[zillow.county == county].longitude.min()
+        border_dict[f'{county}_lon_max'] = zillow[zillow.county == county].longitude.max()
+        
+        #print(border_dict)
+        
+        border_dict = lat_lon_steps(border_dict, zillow, resolution, county)
+        
+        border_dict[f'{county}_lat'] = np.arange(border_dict[f'{county}_lat_min'], 
+                                                 border_dict[f'{county}_lat_max'],
+                                                 border_dict[f'{county}_lat_step'])
+        
+        
+        border_dict[f'{county}_lon'] = np.arange(border_dict[f'{county}_lon_min'],
+                                                 border_dict[f'{county}_lon_max'],
+                                                 border_dict[f'{county}_lon_step'])
+        
+    return border_dict
+    
+
+
+def lat_lon_steps(border_dict, zillow, resolution, county):
+    
+    border_dict[f'{county}_lat_step'] = (border_dict[f'{county}_lat_max'] - border_dict[f'{county}_lat_min']) / resolution
+    border_dict[f'{county}_lon_step'] = (border_dict[f'{county}_lon_max'] - border_dict[f'{county}_lon_min']) / resolution
+
+    return border_dict
+
+def create_grids(border_dict, resolution, df, sample=10_000):
+    grids = []
+    prices = []
+    lat_coords = []
+    lon_coords = []
+    sqr_ft = []
+    added = 0
+    
+    if sample:
+        zillow = df.sample(sample)
+        
+    else:
+        zillow = df
+    zillow.latitude = zillow.latitude/ 1000000
+    zillow.longitude = zillow.longitude / 1000000
+    
+    for i, county in enumerate(np.sort(zillow.county.unique())):
+        grids.append(np.zeros((resolution, resolution)))
+        prices.append(np.zeros((resolution, resolution)))
+        lat_coords.append(np.zeros((resolution,resolution)))
+        lon_coords.append(np.zeros((resolution,resolution)))
+        sqr_ft.append(np.zeros((resolution,resolution)))
+        
+        county_subset = zillow[zillow.county == county]
+        print(county)
+        
+        for a in range(len(county_subset)):
+            
+            for b1 in range(resolution):
+                if border_dict[f'{county}_lat'][b1] - (border_dict[f'{county}_lat_step']/2) <= county_subset.latitude.values[a] < border_dict[f'{county}_lat'][b1] + (border_dict[f'{county}_lat_step'] /2):
+                
+                    for b2 in range(resolution):
+                        if border_dict[f'{county}_lon'][b2] - (border_dict[f'{county}_lon_step']/2) <= county_subset.longitude.values[a] < border_dict[f'{county}_lon'][b2] + (border_dict[f'{county}_lon_step']/2):
+
+                            prices[i][b1, b2] += county_subset.taxvaluedollarcnt.values[a]
+                            grids[i][b1, b2] += 1
+                            sqr_ft[i][b1,b2] += county_subset.sqr_ft.values[a]
+                            lat_coords[i][b1, b2] = border_dict[f'{county}_lat'][b1]
+                            lon_coords[i][b1, b2] = border_dict[f'{county}_lon'][b2]
+                            break
+                    break
+                            
+            added += 1
+            if added % (sample/5) == 0:
+                print(added)
+        #print(grids[i])
+    
+    return grids, prices, lat_coords, lon_coords, sqr_ft, resolution
+
+
+def create_map_data(df, resolution, sample=10_000):
+    border_dict = county_borders(df, resolution)
+    grids, prices, lat_coords, lon_coords, sqr_ft, resolution = create_grids(border_dict, resolution, 
+                                                                                 df, sample=sample)
+    
+    return prices, grids, lat_coords, lon_coords, sqr_ft, resolution
+  
+
+def create_display_heatmap(prices, grids, lat_coords, lon_coords, sqr_ft, resolution, 
+                           counties=['la'], option='average_price'):
+    
+    county_dfs = []
+    
+    api_key = env.gmaps_api()
+    gmaps.configure(api_key=api_key)
+    
+    for county in counties:
+        i = 0
+        if county == 'oc':
+            i = 1
+        elif county == 'ventura':
+            i = 2
+        
+        county_latitude_values = lat_coords[i].reshape((resolution**2,))
+        county_longitude_values = lon_coords[i].reshape((resolution**2,))
+        county_prices = prices[i].reshape((resolution**2,))
+        county_grid = grids[i].reshape((resolution**2,))
+        county_sqr_ft = sqr_ft[i].reshape((resolution**2,))
+
+        heatmap_prices = {'county_prices': county_prices, 'latitude': county_latitude_values, 
+                          'longitude': county_longitude_values, 'num_houses': county_grid,
+                          'sqr_ft': county_sqr_ft}
+
+        county_df =pd.DataFrame(heatmap_prices)
+        county_df = county_df[county_df.num_houses > 0]
+
+        county_df['avg_prices'] = county_df.county_prices / county_df.num_houses
+        county_df['price_per_sqr_ft'] = county_df.county_prices / county_df.sqr_ft
+        print(county_df.price_per_sqr_ft.max())
+        
+        county_dfs.append(county_df)
+
+        locations = county_df[['latitude', 'longitude']]
+        
+        options = {'average_price': county_df['avg_prices'], 'price_per_sqr_ft': county_df['price_per_sqr_ft']}
+        weights = options[option]
+
+        fig = gmaps.figure()
+        heatmap_layer = gmaps.heatmap_layer(locations=locations, weights=weights, 
+                                            max_intensity=weights.max(), point_radius=6.1)
+
+        fig.add_layer(heatmap_layer)
+        display(fig)
+        
+    return county_dfs
+    
+def pearsonr_quants(quants, df):
+    combos = list(itertools.combinations(quants, 2))
+    results_dict = {combo: stats.pearsonr(df[combo[0]], df[combo[1]])\
+                    for combo in combos}
+    for combo in combos:
+        print(f'{combo[0]}:        {combo[1]}:')
+        print(stats.pearsonr(df[combo[0]], df[combo[1]]))
+
+    return results_dict
+
+def pearsonr_remove_non_target_var(results_dict, target_var):
+
+    for keys in results_dict.copy().keys():
+        if target_var not in keys:
+            del results_dict[keys]
+            
+    return results_dict
+
+def print_dictionary_items(a_dict):
+
+    for keys, items in a_dict.items():
+        print()
+        print(keys)
+        print(items)
 
 if __name__ == '__main__':
     a_matrix()

@@ -105,18 +105,21 @@ def get_zillow_data():
     else:
         sql = """
         SELECT parcelid,
-               bedroomcnt,
-	           bathroomcnt,
-               calculatedfinishedsquarefeet,
-               taxvaluedollarcnt,
-               yearbuilt,
-               taxamount,
-               fips
+            bedroomcnt,
+            bathroomcnt,
+            calculatedfinishedsquarefeet,
+            taxvaluedollarcnt,
+            yearbuilt,
+            taxamount,
+            fips,
+            latitude,
+            longitude
         FROM properties_2017
         JOIN propertylandusetype USING (propertylandusetypeid)
-        WHERE propertylandusedesc = 'Single Family Residential';
+        JOIN predictions_2017 USING (parcelid)
+        WHERE propertylandusedesc = 'Single Family Residential'
+        OR propertylandusedesc = 'Inferred Single Family Residential';
         """
-
         df = pd.read_sql(sql, get_db_url('zillow'))
 
         # Write that dataframe to disk for later. Called "caching" the data for later.
